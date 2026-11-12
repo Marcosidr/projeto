@@ -1,0 +1,155 @@
+// Sistema de Agendamento de Oficina Mecânica
+// Modelo de dados (uma única oficina)
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Perfil {
+  CLIENTE
+  ADMIN
+}
+
+enum StatusAgendamento {
+  PENDENTE
+  CONFIRMADO
+  RECUSADO
+  CANCELADO
+  EM_ANDAMENTO
+  CONCLUIDO
+}
+
+model Usuario {
+  id        Int      @id @default(autoincrement())
+  nome      String   @db.VarChar(120)
+  email     String   @unique @db.VarChar(160)
+  senhaHash String   @map("senha_hash")
+  telefone  String?  @db.VarChar(20)
+  perfil    Perfil   @default(CLIENTE)
+  ativo     Boolean  @default(true)
+  criadoEm  DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  veiculos        Veiculo[]
+  agendamentos    Agendamento[]
+  imagensEnviadas Imagem[]
+  alteracoesStatus HistoricoStatus[]
+
+  @@map("usuarios")
+}
+
+model Veiculo {
+  id        Int      @id @default(autoincrement())
+  clienteId Int      @map("cliente_id")
+  placa     String   @unique @db.VarChar(8)
+  marca     String   @db.VarChar(60)
+  modelo    String   @db.VarChar(60)
+  ano       Int
+  cor       String?  @db.VarChar(30)
+  quilometragem Int?
+  criadoEm  DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  cliente      Usuario       @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  agendamentos Agendamento[]
+  imagens      Imagem[]
+
+  @@index([clienteId])
+  @@map("veiculos")
+}
+
+model Servico {
+  id             Int      @id @default(autoincrement())
+  nome           String   @unique @db.VarChar(100)
+  descricao      String
+  preco          Decimal  @db.Decimal(10, 2)
+  duracaoMinutos Int      @map("duracao_minutos")
+  ativo          Boolean  @default(true)
+  criadoEm       DateTime @default(now()) @map("criado_em")
+  atualizadoEm   DateTime @updatedAt @map("atualizado_em")
+
+  agendamentos Agendamento[]
+
+  @@map("servicos")
+}
+
+// Recurso físico da oficina (box / elevador). Dois agendamentos não podem
+// ocupar o mesmo box em horários que se sobrepõem.
+model Box {
+  id    Int     @id @default(autoincrement())
+  nome  String  @unique @db.VarChar(40)
+  ativo Boolean @default(true)
+
+  agendamentos Agendamento[]
+
+  @@map("boxes")
+}
+
+model Agendamento {
+  id           Int               @id @default(autoincrement())
+  clienteId    Int               @map("cliente_id")
+  veiculoId    Int               @map("veiculo_id")
+  servicoId    Int               @map("servico_id")
+  boxId        Int               @map("box_id")
+  inicio       DateTime
+  fim          DateTime
+  status       StatusAgendamento @default(PENDENTE)
+  observacoes  String?
+  motivoRecusa String?           @map("motivo_recusa")
+  precoCobrado Decimal           @map("preco_cobrado") @db.Decimal(10, 2)
+  criadoEm     DateTime          @default(now()) @map("criado_em")
+  atualizadoEm DateTime          @updatedAt @map("atualizado_em")
+
+  cliente   Usuario           @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+  veiculo   Veiculo           @relation(fields: [veiculoId], references: [id], onDelete: Restrict)
+  servico   Servico           @relation(fields: [servicoId], references: [id], onDelete: Restrict)
+  box       Box               @relation(fields: [boxId], references: [id], onDelete: Restrict)
+  historico HistoricoStatus[]
+  imagens   Imagem[]
+
+  @@index([boxId, inicio])
+  @@index([clienteId])
+  @@index([status])
+  @@map("agendamentos")
+}
+
+model HistoricoStatus {
+  id             Int                @id @default(autoincrement())
+  agendamentoId  Int                @map("agendamento_id")
+  statusAnterior StatusAgendamento? @map("status_anterior")
+  statusNovo     StatusAgendamento  @map("status_novo")
+  observacao     String?
+  usuarioId      Int                @map("usuario_id")
+  criadoEm       DateTime           @default(now()) @map("criado_em")
+
+  agendamento Agendamento @relation(fields: [agendamentoId], references: [id], onDelete: Cascade)
+  usuario     Usuario     @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+
+  @@index([agendamentoId])
+  @@map("historico_status")
+}
+
+model Imagem {
+  id            Int      @id @default(autoincrement())
+  veiculoId     Int      @map("veiculo_id")
+  agendamentoId Int?     @map("agendamento_id")
+  enviadoPorId  Int      @map("enviado_por_id")
+  nomeOriginal  String   @map("nome_original") @db.VarChar(255)
+  nomeArquivo   String   @unique @map("nome_arquivo") @db.VarChar(100)
+  mimeType      String   @map("mime_type") @db.VarChar(50)
+  tamanhoBytes  Int      @map("tamanho_bytes")
+  criadoEm      DateTime @default(now()) @map("criado_em")
+
+  veiculo     Veiculo      @relation(fields: [veiculoId], references: [id], onDelete: Cascade)
+  agendamento Agendamento? @relation(fields: [agendamentoId], references: [id], onDelete: SetNull)
+  enviadoPor  Usuario      @relation(fields: [enviadoPorId], references: [id], onDelete: Restrict)
+
+  @@index([veiculoId])
+  @@map("imagens")
+}
